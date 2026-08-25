@@ -17,3 +17,21 @@ test('Should search for phone number and list all attached ads.', async ({ page,
   expect((await page.$$('[data-wwid="ads-modal"] [data-articleid] [data-wwid="control-panel"]')).length).toBeGreaterThanOrEqual(1);
 })
 
+test('Should run the complete phone search for a manually entered number.', async ({ page, context }, testInfo) => {
+  testInfo.setTimeout(60000 * 3);
+
+  await utilsPubli.open(context, page, {loadStorage: false});
+  const firstAd = await utilsPubli.findFirstAdWithPhone(page);
+  const phone = await (await firstAd.$('[data-wwid="phone-number"]')).innerText();
+
+  await page.locator('[data-wwid="menu-button"]').click();
+  await page.locator('[data-wwid="phone-search-button"]').click();
+  await page.locator('[data-wwid="phone-input"]').fill(phone);
+  await expect(page.locator('[data-wwid="full-phone-search-button"]')).toBeEnabled();
+
+  const fullSearchButton = await page.waitForSelector('[data-wwid="full-phone-search-button"]');
+  await utilsPubli.resolveGooglePage(fullSearchButton, context, page);
+
+  await expect(page.locator('[data-wwid="full-phone-search-results"]')).toBeVisible();
+  await expect(page.locator('[data-wwid="full-phone-search-results"]')).toContainText('Rezultate căutare completă');
+});

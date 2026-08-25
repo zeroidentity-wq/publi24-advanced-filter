@@ -8,6 +8,11 @@ import {inspectorEscorteApi, InspectorAd} from '../../../core/inspectorEscorteAp
 import AdsList from '../../Common/Partials/AdList/AdsList';
 import {renderer} from '../../../core/renderer';
 import {IS_MOBILE_VIEW} from '../../../../common/globals';
+import {adActions} from '../../../core/adActions';
+import {WWBrowserStorage} from '../../../core/browserStorage';
+import {SearchResult, linksFilter} from '../../../core/linksFilter';
+import {utils} from '../../../../common/utils';
+import styles from '../../Common/Partials/AdsModal/AdsModal.module.scss';
 
 const PAGE_SIZE = 15;
 
@@ -17,16 +22,25 @@ type PhoneSearchRootProps = {
 
 const DEBOUNCE_DELAY = 1500;
 
+function normalizePhoneNumber(value: string): string {
+  return value.replace(/^\+?40/, '0').replace(/\s+/g, '').trim();
+}
+
 const registerAds = (context: HTMLElement, showDuplicates: boolean) => {
   renderer.registerAdsInContext(context, {updateSeenTime: true, renderOptions: {showDuplicates}});
 };
 
 const PhoneSearchModalRoot: React.FC<PhoneSearchRootProps> = ({ onClose }) => {
   const [listState, setListState] = useState<{ads: AdData[], breaks: number[], errors: string[]} | null>(null);
+  const [phoneInput, setPhoneInput] = useState('');
   const [searchedPhone, setSearchedPhone] = useState<string | null>(null);
   const [source, setSource] = useState<'inspector-escorte' | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [fullSearchSessionId, setFullSearchSessionId] = useState<string | null>(null);
+  const [fullSearchResults, setFullSearchResults] = useState<SearchResult[] | null>(null);
+  const [fullSearchLoading, setFullSearchLoading] = useState(false);
+  const [fullSearchError, setFullSearchError] = useState<string | null>(null);
   const pendingUuidsRef = useRef<AdUuid[]>([]);
   const pendingInspectorAdsRef = useRef<InspectorAd[]>([]);
   const totalCountRef = useRef<number>(0);
@@ -123,29 +137,111 @@ const PhoneSearchModalRoot: React.FC<PhoneSearchRootProps> = ({ onClose }) => {
 
   const handleInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = event.target.value;
+    const cleanedPhone = normalizePhoneNumber(rawValue);
+
+    setPhoneInput(rawValue);
     setListState(null);
     setSearchedPhone(null);
     setSource(undefined);
     pendingUuidsRef.current = [];
     pendingInspectorAdsRef.current = [];
     totalCountRef.current = 0;
+    setFullSearchSessionId(null);
+    setFullSearchResults(null);
+    setFullSearchError(null);
 
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
     }
 
-    if (rawValue.trim()) {
+    if (cleanedPhone) {
       debounceTimeoutRef.current = setTimeout(() => {
-        const cleanedPhone = rawValue.replace(/^\+?40/, '0').replace(/\s+/g, '');
-
-        if (cleanedPhone) {
-          performSearch(cleanedPhone);
-        } else {
-          setListState({ads: [], breaks: [], errors: []});
-        }
+        performSearch(cleanedPhone);
       }, DEBOUNCE_DELAY);
     }
   }, [performSearch]);
+
+  const handleFullSearch = useCallback(async () => {
+    const cleanedPhone = normalizePhoneNumber(phoneInput);
+
+    if (!cleanedPhone) {
+      setFullSearchError('Introdu un număr de telefon pentru căutarea completă.');
+      return;
+    }
+
+    setFullSearchLoading(true);
+    setFullSearchSessionId(null);
+    setFullSearchResults(null);
+    setFullSearchError(null);
+
+    try {
+      const searchId = await adActions.startManualPhoneSearch(cleanedPhone);
+      setFullSearchSessionId(searchId);
+    } catch (error) {
+      console.error('Failed to start manual full phone search.', error);
+      setFullSearchLoading(false);
+      setFullSearchError(`Eroare căutare completă: ${utils.formatError(error)}`);
+    }
+  }, [phoneInput]);
+
+  useEffect(() => {
+    if (!fullSearchSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const resultKey = `ww:search_results:${fullSearchSessionId}`;
+
+    const pollSearchResults = async () => {
+      try {
+        const data = await WWBrowserStorage.get([resultKey, 'ww:search_started_for']);
+
+        if (cancelled) {
+          return;
+        }
+
+        const results = data[resultKey];
+        const searchState = data['ww:search_started_for'] as {wwid?: string} | undefined;
+
+        if (Array.isArray(results)) {
+          setFullSearchResults(results as SearchResult[]);
+        }
+
+        if (Array.isArray(results) && searchState?.wwid !== fullSearchSessionId) {
+          setFullSearchLoading(false);
+          if (interval) {
+            clearInterval(interval);
+            interval = null;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to read manual full phone search results.', error);
+
+        if (!cancelled) {
+          setFullSearchLoading(false);
+          setFullSearchError(`Eroare citire rezultate: ${utils.formatError(error)}`);
+        }
+
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      }
+    };
+
+    interval = setInterval(() => {
+      void pollSearchResults();
+    }, 300);
+    void pollSearchResults();
+
+    return () => {
+      cancelled = true;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [fullSearchSessionId]);
 
   useEffect(() => {
     return () => {
@@ -172,6 +268,47 @@ const PhoneSearchModalRoot: React.FC<PhoneSearchRootProps> = ({ onClose }) => {
     />
   ), []);
 
+  const fullSearchLinks = fullSearchResults
+    ? linksFilter.sortLinks(linksFilter.filterLinks(fullSearchResults, ''))
+    : [];
+
+  const fullSearchContent = (fullSearchLoading || fullSearchSessionId || fullSearchError) ? (
+    <div className={styles.fullSearchContent} data-wwid="full-phone-search-results">
+      <h4 className={styles.fullSearchTitle}>Rezultate căutare completă</h4>
+      {fullSearchError ? (
+        <p className={styles.fullSearchError} data-wwid="full-phone-search-error">{fullSearchError}</p>
+      ) : fullSearchLoading ? (
+        <p className={styles.fullSearchStatus} data-wwid="full-phone-search-status">Se caută pe Google...</p>
+      ) : fullSearchLinks.length === 0 ? (
+        <p className={styles.fullSearchStatus} data-wwid="full-phone-search-status">Nu au fost găsite linkuri relevante.</p>
+      ) : (
+        <div className={styles.fullSearchLinks}>
+          {fullSearchLinks.map((link, index) => {
+            const isGoto = Array.isArray(link);
+            const href = isGoto
+              ? new URL(link[1], 'https://www.google.com').href
+              : link;
+            const display = isGoto
+              ? link[0]
+              : link.replace(/^https?:\/\/(www\.)?|^www\./, '');
+
+            return (
+              <a
+                key={`${display}-${index}`}
+                className={styles.fullSearchLink}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {display}
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <AdsModal
       {...({ source, sourcePhone: source === 'inspector-escorte' ? searchedPhone : undefined } as any)}
@@ -180,6 +317,12 @@ const PhoneSearchModalRoot: React.FC<PhoneSearchRootProps> = ({ onClose }) => {
       errors={listState?.errors}
       title={<><PhoneIcon fill={misc.getPubliTheme() === 'dark' ? '#bfbfbf' : '#fff'}/> Anunțuri</>}
       onInputChange={handleInputChange}
+      inputValue={phoneInput}
+      inputDisabled={fullSearchLoading}
+      onFullSearch={handleFullSearch}
+      fullSearchDisabled={!normalizePhoneNumber(phoneInput)}
+      fullSearchLoading={fullSearchLoading}
+      fullSearchContent={fullSearchContent}
       totalCount={totalCountRef.current || undefined}
       hasMore={pendingUuidsRef.current.length > 0 || pendingInspectorAdsRef.current.length > 0}
       isLoadingMore={isLoadingMore}

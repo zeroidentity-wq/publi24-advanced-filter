@@ -8,6 +8,12 @@ type AdsModalProps = {
   close: () => void;
   title?: string | React.ReactNode;
   onInputChange?: ChangeEventHandler;
+  inputValue?: string;
+  inputDisabled?: boolean;
+  onFullSearch?: () => void;
+  fullSearchDisabled?: boolean;
+  fullSearchLoading?: boolean;
+  fullSearchContent?: React.ReactNode;
   phone?: string;
   removed?: number;
   adsData: AdData[] | null;
@@ -58,6 +64,12 @@ const AdsModal: React.FC<AdsModalProps> = ({
   title = "Anunțuri",
   phone,
   onInputChange,
+  inputValue,
+  inputDisabled = false,
+  onFullSearch,
+  fullSearchDisabled = false,
+  fullSearchLoading = false,
+  fullSearchContent,
   removed,
   adsData,
   onCleanup,
@@ -91,16 +103,29 @@ const AdsModal: React.FC<AdsModalProps> = ({
       prose={false}
       inline={inline}
     >
-      <input
-        type="text"
-        className={styles.phoneInput}
-        data-wwid="phone-input"
-        placeholder="Număr telefon"
-        onChange={onInputChange}
-        value={phone || undefined}
-        disabled={!!phone}
-        readOnly={!!phone}
-      />
+      <div className={styles.phoneInputRow}>
+        <input
+          type="text"
+          className={styles.phoneInput}
+          data-wwid="phone-input"
+          placeholder="Număr telefon"
+          onChange={onInputChange}
+          value={inputValue !== undefined ? inputValue : phone || undefined}
+          disabled={!!phone || inputDisabled}
+          readOnly={!!phone || inputDisabled}
+        />
+        {onFullSearch && (
+          <button
+            type="button"
+            className={styles.fullSearchButton}
+            data-wwid="full-phone-search-button"
+            onClick={onFullSearch}
+            disabled={fullSearchDisabled || fullSearchLoading}
+          >
+            {fullSearchLoading ? 'Se caută...' : 'Căutare completă'}
+          </button>
+        )}
+      </div>
       <p className={styles.resultsInfo}>
         <strong className={styles.resultsCount} data-wwid="results-count">
           {isLoading ? (
@@ -125,6 +150,7 @@ const AdsModal: React.FC<AdsModalProps> = ({
       </p>
 
       <div className={styles.contentContainer} data-wwid="content">
+        {fullSearchContent}
         {adsData && renderAds(adsData, sectionBreaks)}
         {errors && errors.length > 0 && errors.map((error, index) => (
           <ErrorDisplay key={index} errorMessage={error} dataWwId="load-error" />

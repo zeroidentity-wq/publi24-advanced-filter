@@ -197,8 +197,17 @@ function applyAutoHiding(phoneNumber: string, id: string, contentData: AdContent
   }
 }
 
-async function searchPhoneResults(id: string, phoneNumber: string, item: HTMLElement, windowRef: Window | null): Promise<void> {
-  WWMemoryStorage.setAdAnalyzeError(id, null);
+async function searchPhoneResults(
+  id: string,
+  phoneNumber: string,
+  addUrlId: string,
+  windowRef: Window | null,
+  trackAdState: boolean = true,
+): Promise<void> {
+  if (trackAdState) {
+    WWMemoryStorage.setAdAnalyzeError(id, null);
+  }
+
   WWStorage.incrementPhoneSearchClickCount();
 
   try {
@@ -207,19 +216,24 @@ async function searchPhoneResults(id: string, phoneNumber: string, item: HTMLEle
     await WWBrowserStorage.set(`ww:search_started_for`, { wwid: id, manual: WWStorage.isManualPhoneSearchEnabled() });
     await WWBrowserStorage.set(`ww:search_results:${id}`, null);
 
-    const urlMatch: RegExpMatchArray | null = adData.getItemUrl(item).match(/\/([^./]+)\.html/);
-    const addUrlId: string = urlMatch ? urlMatch[1] : '';
-    const encodedSearch: string = encodeURIComponent(`"${phoneNumber}" OR "${addUrlId}"`);
+    const searchQuery = addUrlId
+      ? `"${phoneNumber}" OR "${addUrlId}"`
+      : `"${phoneNumber}"`;
+    const encodedSearch: string = encodeURIComponent(searchQuery);
     const searchUrl = `https://www.google.com/search?q=${encodedSearch}`;
 
     if (windowRef) {
-      WWMemoryStorage.setPhoneSearchLoading(id, true);
+      if (trackAdState) {
+        WWMemoryStorage.setPhoneSearchLoading(id, true);
+      }
 
       windowRef.location = searchUrl;
 
       WWBrowserStorage.when(`ww:search_started_for`, null, () => {
-        WWMemoryStorage.setPhoneSearchLoading(id, false);
-        WWStorage.setInvestigatedTime(id, Date.now())
+        if (trackAdState) {
+          WWMemoryStorage.setPhoneSearchLoading(id, false);
+          WWStorage.setInvestigatedTime(id, Date.now());
+        }
       });
     }
 
@@ -233,7 +247,10 @@ async function searchPhoneResults(id: string, phoneNumber: string, item: HTMLEle
       }, 100);
     }
   } catch (error) {
-    WWMemoryStorage.setAdAnalyzeError(id, "Eroare căutare rezultate telefon: " + utils.formatError(error));
+    if (trackAdState) {
+      WWMemoryStorage.setAdAnalyzeError(id, "Eroare căutare rezultate telefon: " + utils.formatError(error));
+    }
+
     throw error;
   }
 }
@@ -346,10 +363,24 @@ export const adActions = {
     }
 
     if (search && windowRef) {
-      await searchPhoneResults(id, phoneNumber, item, windowRef);
+      const urlMatch: RegExpMatchArray | null = adData.getItemUrl(item).match(/\/([^./]+)\.html/);
+      const addUrlId: string = urlMatch ? urlMatch[1] : '';
+      await searchPhoneResults(id, phoneNumber, addUrlId, windowRef);
     }
 
     return true;
+  },
+
+  async startManualPhoneSearch(phoneNumber: string): Promise<string> {
+    const searchId = `manual-phone-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const windowRef = window.open();
+
+    if (!windowRef) {
+      throw new Error('Nu s-a putut deschide fereastra pentru căutarea telefonului.');
+    }
+
+    await searchPhoneResults(searchId, phoneNumber, '', windowRef, false);
+    return searchId;
   },
 
   async analyzeFoundImages(id: string, item: Element): Promise<void> {

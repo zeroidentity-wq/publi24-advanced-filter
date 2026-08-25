@@ -41,6 +41,99 @@ input[type="text"].phoneInput {
   }
 }
 
+.phoneInputRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+
+  .phoneInput {
+    flex: 1;
+    min-width: 0;
+  }
+
+  :global(.onMobile) & {
+    flex-direction: column;
+  }
+}
+
+.fullSearchButton {
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  background: #3a7bd5;
+  color: #fff;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: #2f6bbf;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  :global(.dark) & {
+    background: #8ab4f8;
+    color: #111;
+
+    &:hover:not(:disabled) {
+      background: #7aa3e8;
+    }
+  }
+}
+
+.fullSearchContent {
+  border: 1px solid rgba(58, 123, 213, 0.35);
+  border-radius: 5px;
+  margin: 8px 0 14px;
+  padding: 10px 12px;
+
+  :global(.dark) & {
+    border-color: rgba(138, 180, 248, 0.45);
+  }
+}
+
+.fullSearchTitle {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.fullSearchStatus {
+  margin: 0;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.fullSearchLinks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fullSearchLink {
+  overflow: hidden;
+  color: #2462a8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  :global(.dark) & {
+    color: #9fc2fa;
+  }
+}
+
+.fullSearchError {
+  color: #a33b3b;
+  margin: 0;
+
+  :global(.dark) & {
+    color: #e69b9b;
+  }
+}
+
 .resultsInfo {
   color: rgb(55 55 55);
   font-size: 0.95rem;
